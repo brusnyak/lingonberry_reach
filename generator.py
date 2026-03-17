@@ -66,7 +66,7 @@ Greeting to use: {greeting}
 Return JSON only: {{"subject": "...", "body": "..."}}"""
 
     resp = _llm().chat.completions.create(
-        model="google/gemini-2.0-flash-exp:free",
+        model="mistralai/mistral-small-3.1-24b-instruct:free",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7,
         max_tokens=400,
@@ -103,7 +103,7 @@ Channel: {channel}
 Return the message text only, no JSON, no quotes."""
 
     resp = _llm().chat.completions.create(
-        model="google/gemini-2.0-flash-exp:free",
+        model="mistralai/mistral-small-3.1-24b-instruct:free",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
         max_tokens=150,

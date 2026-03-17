@@ -45,7 +45,7 @@ Return JSON only:
 
 def classify_reply(reply_text: str) -> dict:
     resp = _llm().chat.completions.create(
-        model="google/gemini-2.0-flash-exp:free",
+        model="mistralai/mistral-small-3.1-24b-instruct:free",
         messages=[{"role": "user", "content": PROMPT.format(reply=reply_text[:2000])}],
         temperature=0.2,
         max_tokens=200,
@@ -82,7 +82,7 @@ def run_classifier(conn: sqlite3.Connection) -> int:
             label=result["label"],
             pain_points=json.dumps(result["pain_points"]),
             confidence=result["confidence"],
-            model="gemini-2.0-flash-exp",
+            model="mistralai/mistral-small-3.1-24b-instruct:free",
         )
 
     return len(rows)
