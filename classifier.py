@@ -4,15 +4,23 @@ LLM-based reply classifier.
 Labels: interested | not_interested | question | ignore
 Extracts pain points when label is 'interested' or 'question'.
 """
+import importlib.util
 import json
 import os
 import re
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 from openai import OpenAI
 
 _client = None
+_DB_PATH = Path(__file__).parent / "storage" / "db.py"
+_DB_SPEC = importlib.util.spec_from_file_location("outreach_storage_db_classifier", _DB_PATH)
+if _DB_SPEC is None or _DB_SPEC.loader is None:
+    raise ImportError(f"Unable to load outreach storage module from {_DB_PATH}")
+_DB_MODULE = importlib.util.module_from_spec(_DB_SPEC)
+_DB_SPEC.loader.exec_module(_DB_MODULE)
 
 def _llm() -> OpenAI:
     global _client
@@ -20,6 +28,7 @@ def _llm() -> OpenAI:
         _client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=os.environ["OPENROUTER_API_KEY"],
+            timeout=20.0,
         )
     return _client
 
@@ -43,16 +52,40 @@ Return JSON only:
 {{"label": "...", "pain_points": ["...", "..."], "confidence": 0.0-1.0}}"""
 
 
+def _heuristic_classify(reply_text: str) -> dict:
+    text = (reply_text or "").strip()
+    lower = text.lower()
+
+    if any(token in lower for token in ["out of office", "automatic reply", "mailer-daemon", "delivery has failed", "undeliverable"]):
+        return {"label": "ignore", "pain_points": [], "confidence": 0.85}
+    if any(token in lower for token in ["not interested", "no thanks", "stop", "unsubscribe", "not relevant", "nesúhlas", "nemáme záujem", "nezáujem"]):
+        return {"label": "not_interested", "pain_points": [], "confidence": 0.8}
+    pains = []
+    for needle in [
+        "manual", "manually", "ručn", "manualne", "slow", "3 days", "follow-up", "follow up",
+        "documents", "doklad", "intake", "onboarding", "appointment", "booking"
+    ]:
+        if needle in lower:
+            pains.append(needle)
+    if "?" in text or any(token in lower for token in ["what", "how", "which", "čo", "ako", "kolko", "koľko", "prečo"]):
+        return {"label": "question", "pain_points": pains[:3], "confidence": 0.7}
+    if any(token in lower for token in ["yes", "sure", "sounds good", "open to", "send more", "please send", "zaujíma", "pošlite", "môžeme"]):
+        return {"label": "interested", "pain_points": pains[:3], "confidence": 0.68}
+    return {"label": "ignore", "pain_points": pains[:2], "confidence": 0.4}
+
+
 def classify_reply(reply_text: str) -> dict:
-    resp = _llm().chat.completions.create(
-        model="mistralai/mistral-small-3.1-24b-instruct:free",
-        messages=[{"role": "user", "content": PROMPT.format(reply=reply_text[:2000])}],
-        temperature=0.2,
-        max_tokens=200,
-    )
-    raw = resp.choices[0].message.content.strip()
-    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
     try:
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            return _heuristic_classify(reply_text)
+        resp = _llm().chat.completions.create(
+            model="mistralai/mistral-small-3.1-24b-instruct:free",
+            messages=[{"role": "user", "content": PROMPT.format(reply=reply_text[:2000])}],
+            temperature=0.2,
+            max_tokens=200,
+        )
+        raw = resp.choices[0].message.content.strip()
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
         result = json.loads(raw)
         return {
             "label": result.get("label", "ignore"),
@@ -60,12 +93,12 @@ def classify_reply(reply_text: str) -> dict:
             "confidence": float(result.get("confidence", 0.5)),
         }
     except Exception:
-        return {"label": "ignore", "pain_points": [], "confidence": 0.0}
+        return _heuristic_classify(reply_text)
 
 
 def run_classifier(conn: sqlite3.Connection) -> int:
     """Classify all unclassified replies. Returns count processed."""
-    from storage.db import log_classification
+    log_classification = _DB_MODULE.log_classification
     rows = conn.execute(
         """
         SELECT r.id, r.content FROM replies r

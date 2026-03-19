@@ -162,7 +162,7 @@ with tab_sent:
         import pandas as pd
         st.dataframe(
             pd.DataFrame([dict(r) for r in rows]),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
         )
     else:
@@ -243,7 +243,7 @@ with tab_stats:
         st.subheader("Sends per account")
         st.dataframe(
             pd.DataFrame([dict(r) for r in account_breakdown]),
-            use_container_width=True, hide_index=True,
+            width='stretch', hide_index=True,
         )
 
 # ── Test ──────────────────────────────────────────────────────────────────────
@@ -355,4 +355,4 @@ with tab_test:
                 "remaining": acc["daily_limit"] - sent_today,
             })
         import pandas as pd
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
