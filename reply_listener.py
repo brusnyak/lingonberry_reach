@@ -76,26 +76,52 @@ def _load_accounts() -> list[dict]:
 
 def _match_lead(conn: sqlite3.Connection, from_addr: str,
                 subject: str) -> tuple[int | None, int | None]:
-    """Try to match a reply to a lead_id and outreach_id."""
-    # Match by recipient address in outreach_log
+    """Try to match a reply to a lead_id and outreach_id.
+
+    Priority:
+    1. Exact address match in outreach_log (original outreach recipient)
+    2. Address appears in any existing reply from that lead (follow-up chain)
+    3. Business name in subject line
+    """
+    # 1. Direct match: we sent outreach to this address
+    row = conn.execute(
+        """
+        SELECT o.id, o.lead_id FROM outreach_log o
+        WHERE o.status = 'sent' AND o.channel = 'email'
+          AND LOWER(o.address) = LOWER(?)
+        ORDER BY o.sent_at DESC LIMIT 1
+        """,
+        (from_addr,),
+    ).fetchone()
+    if row:
+        return row["lead_id"], row["id"]
+
+    # 2. Follow-up chain: this address already replied before — reuse same lead+outreach
+    row = conn.execute(
+        """
+        SELECT r.lead_id, r.outreach_id FROM replies r
+        WHERE LOWER(r.from_address) = LOWER(?)
+        ORDER BY r.received_at DESC LIMIT 1
+        """,
+        (from_addr,),
+    ).fetchone()
+    if row:
+        return row["lead_id"], row["outreach_id"]
+
+    # 3. Business name in subject
     row = conn.execute(
         """
         SELECT o.id, o.lead_id FROM outreach_log o
         JOIN businesses b ON b.id = o.lead_id
         WHERE o.status = 'sent' AND o.channel = 'email'
-          AND (
-            -- reply from the email we sent to
-            LOWER(o.address) = LOWER(?)
-            OR
-            -- or business name appears in subject
-            LOWER(?) LIKE '%' || LOWER(b.name) || '%'
-          )
+          AND LOWER(?) LIKE '%' || LOWER(b.name) || '%'
         ORDER BY o.sent_at DESC LIMIT 1
         """,
-        (from_addr, subject),
+        (subject,),
     ).fetchone()
     if row:
         return row["lead_id"], row["id"]
+
     return None, None
 
 
@@ -122,15 +148,16 @@ def poll_replies(since_days: int = 7) -> int:
             _, data = mail.search(None, f'(SINCE "{since}")')
 
             for num in data[0].split():
-                _, msg_data = mail.fetch(num, "(RFC822)")
-                raw = msg_data[0][1]
-                msg = email.message_from_bytes(raw)
+                # Fetch headers first to avoid downloading full bodies / attachments
+                _, header_data = mail.fetch(num, "(BODY.PEEK[HEADER])")
+                if not header_data or not isinstance(header_data[0], tuple):
+                    continue
+                
+                raw_headers = header_data[0][1]
+                msg_headers = email.message_from_bytes(raw_headers)
 
-                from_raw = _decode_header_value(msg.get("From", ""))
-                subject = _decode_header_value(msg.get("Subject", ""))
-                date_str = msg.get("Date", "")
-                message_id = (msg.get("Message-ID") or "").strip()
-                body = _get_body(msg)
+                from_raw = _decode_header_value(msg_headers.get("From", ""))
+                subject = _decode_header_value(msg_headers.get("Subject", ""))
 
                 # extract email address from From header
                 import re
@@ -140,6 +167,15 @@ def poll_replies(since_days: int = 7) -> int:
                 lead_id, outreach_id = _match_lead(conn, from_addr, subject)
                 if lead_id is None:
                     continue  # not one of our leads
+
+                # Matched. Fetch the full message.
+                _, msg_data = mail.fetch(num, "(RFC822)")
+                raw = msg_data[0][1]
+                msg = email.message_from_bytes(raw)
+                
+                date_str = msg.get("Date", "")
+                message_id = (msg.get("Message-ID") or "").strip()
+                body = _get_body(msg)
 
                 try:
                     received_at = parsedate_to_datetime(date_str).astimezone(timezone.utc).isoformat()

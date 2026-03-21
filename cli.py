@@ -61,6 +61,13 @@ def build_parser() -> argparse.ArgumentParser:
     its = sub.add_parser("internal-reply-test-status", help="Poll and preview internal reply-test drafts")
     its.add_argument("-n", "--limit", type=int, default=5)
 
+    tf = sub.add_parser("deterministic-test-flow", help="Reset a single lead and create a fresh deterministic outreach draft")
+    tf.add_argument("--lead-id", type=int, default=302)
+    tf.add_argument("--recipient", default="")
+    tf.add_argument("--send", action="store_true", help="Actually send the freshly created outreach draft")
+    tf.add_argument("--no-clear-history", dest="clear_history", action="store_false", help="Keep previous outreach/reply history")
+    tf.set_defaults(clear_history=True)
+
     return parser
 
 
@@ -109,6 +116,9 @@ def main() -> int:
         return 0
     if args.command == "internal-reply-test-status":
         print(outreach.internal_reply_test_status(args.limit))
+        return 0
+    if args.command == "deterministic-test-flow":
+        print(outreach.deterministic_test_lead_flow(args.lead_id, args.recipient, args.clear_history, args.send))
         return 0
 
     parser.print_help()

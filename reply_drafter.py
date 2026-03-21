@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
 from senders import canonical_sender
 
 
@@ -31,7 +35,7 @@ def _signer(name: str) -> str:
     return parts[0] if parts else "Team"
 
 
-def _language_for_address(address: str, niche: str, content: str = "") -> str:
+def _language_for_address(address: str, niche: str, content: str = "", lead_language: str = "") -> str:
     addr = (address or "").lower()
     niche = (niche or "").lower()
     body = (content or "").lower()
@@ -39,6 +43,11 @@ def _language_for_address(address: str, niche: str, content: str = "") -> str:
         return "en"
     if any(token in body for token in ["guten tag", "danke", "bitte", "rückmeldung"]):
         return "de"
+        
+    lead_lang = (lead_language or "").strip().lower()
+    if lead_lang in {"en", "sk", "cs", "de"}:
+        return lead_lang
+        
     if addr.endswith("@gmail.com"):
         return "en"
     if addr.endswith(".sk") or niche in {"real_estate", "accounting_tax", "dental_medical"}:
@@ -90,10 +99,14 @@ def _question_type(text: str) -> str:
     lower = (text or "").lower()
     if any(token in lower for token in ["price", "cost", "pricing", "koľko", "cena", "ceny"]):
         return "pricing"
-    if any(token in lower for token in ["what", "how", "čo", "ako", "co ", "jak", "?"]):
-        return "clarify"
+    if any(token in lower for token in ["who are you", "who is", "reference", "portfolio", "previous work",
+                                         "past work", "example", "case study", "proof", "track record",
+                                         "kto ste", "referencie", "ukážka", "príklad"]):
+        return "credibility"
     if any(token in lower for token in ["call", "meet", "chat", "hovor", "callu", "stretn", "telefon"]):
         return "call"
+    if any(token in lower for token in ["what", "how", "čo", "ako", "co ", "jak", "?"]):
+        return "clarify"
     return "generic"
 
 
@@ -125,6 +138,15 @@ def _clarify_body(language: str, signer: str, niche: str, qtype: str, pains: lis
         joined = ", ".join(pains[:2])
         pain_hint = f" Hlavne okolo {joined}." if language == "sk" else f" Mainly around {joined}."
     if language == "sk":
+        if qtype == "credibility":
+            body = (
+                f"Dobrý deň,\n\njasné. Pracujem s malými firmami na {scope}.\n"
+                f"Nie som agentúra — robím to sám, takže viem byť konkrétny a rýchly.\n\n"
+                f"Ak chcete, pošlem vám krátky outline toho, čo by som sa pozrel ako prvé u vás, "
+                f"a môžete sami posúdiť, či to dáva zmysel.\n\n"
+                f"S pozdravom,\n{signer}"
+            )
+            return body, "Answer credibility question: explain who you are, offer a concrete next step."
         if qtype == "pricing":
             body = (
                 f"Dobrý deň,\n\njasné. Cena závisí od toho, aký kus procesu treba riešiť, "
@@ -149,6 +171,15 @@ def _clarify_body(language: str, signer: str, niche: str, qtype: str, pains: lis
             f"S pozdravom,\n{signer}"
         )
         return body, "Answer the question directly, then offer a small concrete next step."
+    if qtype == "credibility":
+        body = (
+            f"Hi,\n\nfair question. I work with small businesses on {scope}.\n"
+            f"I do this solo, not through an agency, so I can be specific and move fast.\n\n"
+            f"Rather than a portfolio, I find it more useful to send a short outline of what I would look at "
+            f"in your specific setup — that way you can judge whether it is relevant before committing to anything.\n\n"
+            f"Want me to send that?\n\nBest,\n{signer}"
+        )
+        return body, "Answer credibility question: explain who you are, offer a concrete next step."
     if qtype == "pricing":
         body = (
             f"Hi,\n\nsure. Pricing depends on how much of the process needs attention, so I usually start by looking at the current setup first.\n"
@@ -216,7 +247,7 @@ def build_reply_draft(row: dict) -> ReplyDraft:
     )
     sender_name = sender_profile["name"]
     niche = row.get("target_niche") or ""
-    language = _language_for_address(row.get("from_address") or "", niche, row.get("content") or "")
+    language = _language_for_address(row.get("from_address") or "", niche, row.get("content") or "", row.get("lead_language") or "")
     signer = _signer(sender_name)
     label = (row.get("label") or "question").lower()
     qtype = _question_type(row.get("content") or "")

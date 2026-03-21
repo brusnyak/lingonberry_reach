@@ -748,9 +748,13 @@ def get_reply_queue(conn: sqlite3.Connection, limit: int = 20) -> list[sqlite3.R
             rd.sender_name,
             rd.sender_address,
             rd.rationale,
-            rd.error_note
+            rd.error_note,
+            COALESCE(NULLIF(TRIM(w.language), ''), 'en') AS lead_language
         FROM replies r
         JOIN businesses b ON b.id = r.lead_id
+        LEFT JOIN website_data w ON w.id = (
+            SELECT MAX(w2.id) FROM website_data w2 WHERE w2.business_id = b.id
+        )
         LEFT JOIN outreach_log o ON o.id = r.outreach_id
         LEFT JOIN reply_classification rc ON rc.reply_id = r.id
         LEFT JOIN reply_drafts rd ON rd.reply_id = r.id
@@ -784,9 +788,13 @@ def get_reply_queue_needing_action(conn: sqlite3.Connection, limit: int = 20) ->
             rd.sender_name,
             rd.sender_address,
             rd.rationale,
-            rd.error_note
+            rd.error_note,
+            COALESCE(NULLIF(TRIM(w.language), ''), 'en') AS lead_language
         FROM replies r
         JOIN businesses b ON b.id = r.lead_id
+        LEFT JOIN website_data w ON w.id = (
+            SELECT MAX(w2.id) FROM website_data w2 WHERE w2.business_id = b.id
+        )
         LEFT JOIN outreach_log o ON o.id = r.outreach_id
         LEFT JOIN reply_classification rc ON rc.reply_id = r.id
         LEFT JOIN reply_drafts rd ON rd.reply_id = r.id

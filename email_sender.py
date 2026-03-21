@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
+
+# Ensure outreach/ is on sys.path so bare imports work regardless of cwd
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
 from senders import env_sender_name
 
 load_dotenv(Path(__file__).parent.parent / ".env")
