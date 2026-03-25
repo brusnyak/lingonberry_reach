@@ -8,6 +8,7 @@ import os
 
 
 SENDER_REGISTRY = {
+    "lingonberry.max@gmail.com": {"name": "Max Lingonberry", "short": "Max L."},
     "maxberryme68@gmail.com": {"name": "Max Berry", "short": "Max B."},
     "brusnyak.f@gmail.com": {"name": "Victor Brusnyak", "short": "Victor B."},
     "victor.brusnyak@gmail.com": {"name": "Victor Brusnyak", "short": "Victor B."},

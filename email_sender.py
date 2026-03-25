@@ -24,7 +24,39 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SEND_WINDOWS_UTC = [(time(9, 0), time(11, 0)), (time(13, 0), time(16, 0))]
+
+# Send windows by detected timezone (UTC times)
+# Tradesmen: morning before first job, maybe midday, evening after work
+_WINDOWS_BY_TZ: dict[str, list[tuple[time, time]]] = {
+    "AU":  [(time(20, 0), time(22, 0)), (time(8, 0), time(11, 0))],   # AEST UTC+10: 6-8am + 6-9pm local
+    "EU":  [(time(7, 0),  time(9, 0)),  (time(12, 0), time(15, 0))],  # CET UTC+1: 8-10am + 1-4pm local
+    "default": [(time(8, 0), time(10, 0)), (time(17, 0), time(19, 0))],  # safe global fallback
+}
+
+_AU_INDICATORS = {
+    "nsw", "vic", "qld", "wa", "sa", "nt", "act", "tas",
+    "australia", "sydney", "melbourne", "brisbane", "perth",
+    "adelaide", "canberra", "darwin", "hobart",
+}
+_EU_INDICATORS = {
+    ".sk", ".cz", ".at", ".de", "bratislava", "praha", "brno",
+    "wien", "vienna", "berlin", "münchen", "munich", "prague",
+    "slovakia", "czech", "austria", "germany",
+}
+
+
+def _detect_tz_key(address: str) -> str:
+    """Infer timezone bucket from lead address string."""
+    addr = (address or "").lower()
+    for token in _AU_INDICATORS:
+        if token in addr:
+            return "AU"
+    for token in _EU_INDICATORS:
+        if token in addr:
+            return "EU"
+    return "default"
+
+
 COOLDOWN_MIN_MINUTES = 18
 COOLDOWN_MAX_MINUTES = 43
 def _utc_now() -> datetime:
@@ -93,40 +125,42 @@ def pick_account(conn: sqlite3.Connection) -> Optional[dict]:
     return eligible[0][3]
 
 
-def _within_windows(now: datetime) -> bool:
+def _within_windows(now: datetime, windows: list[tuple[time, time]]) -> bool:
     if now.weekday() >= 5:
         return False
     current = now.time()
-    return any(start <= current <= end for start, end in SEND_WINDOWS_UTC)
+    return any(start <= current <= end for start, end in windows)
 
 
-def _next_window_start(now: datetime) -> datetime:
+def _next_window_start(now: datetime, windows: list[tuple[time, time]]) -> datetime:
     candidate = now
     for _ in range(14):
         if candidate.weekday() < 5:
-            for start, _end in SEND_WINDOWS_UTC:
+            for start, _end in windows:
                 dt = datetime.combine(candidate.date(), start, tzinfo=timezone.utc)
                 if dt >= now:
                     return dt
         candidate = datetime.combine(candidate.date() + timedelta(days=1), time(0, 0), tzinfo=timezone.utc)
-    return datetime.combine((now + timedelta(days=1)).date(), SEND_WINDOWS_UTC[0][0], tzinfo=timezone.utc)
+    return datetime.combine((now + timedelta(days=1)).date(), windows[0][0], tzinfo=timezone.utc)
 
 
-def _clip_to_window(ts: datetime) -> datetime:
+def _clip_to_window(ts: datetime, windows: list[tuple[time, time]]) -> datetime:
     if ts.weekday() >= 5:
-        return _next_window_start(ts)
-    for start, end in SEND_WINDOWS_UTC:
+        return _next_window_start(ts, windows)
+    for start, end in windows:
         start_dt = datetime.combine(ts.date(), start, tzinfo=timezone.utc)
         end_dt = datetime.combine(ts.date(), end, tzinfo=timezone.utc)
         if start_dt <= ts <= end_dt:
             return ts
         if ts < start_dt:
             return start_dt
-    return _next_window_start(datetime.combine(ts.date() + timedelta(days=1), time(0, 0), tzinfo=timezone.utc))
+    return _next_window_start(datetime.combine(ts.date() + timedelta(days=1), time(0, 0), tzinfo=timezone.utc), windows)
 
 
-def next_send_after(conn: sqlite3.Connection, address: str, jitter_seed: int | None = None, now: datetime | None = None) -> datetime:
+def next_send_after(conn: sqlite3.Connection, address: str, jitter_seed: int | None = None,
+                    now: datetime | None = None, lead_address: str = "") -> datetime:
     now = now or _utc_now()
+    windows = _WINDOWS_BY_TZ[_detect_tz_key(lead_address)]
     last = _last_sent_at(conn, address)
     baseline = now
     if last:
@@ -136,14 +170,14 @@ def next_send_after(conn: sqlite3.Connection, address: str, jitter_seed: int | N
             pass
     rng = random.Random(jitter_seed or int(now.timestamp()))
     cooldown = timedelta(minutes=rng.randint(COOLDOWN_MIN_MINUTES, COOLDOWN_MAX_MINUTES))
-    candidate = _clip_to_window(baseline if _within_windows(baseline) else _next_window_start(baseline))
-    if candidate == baseline and not _within_windows(candidate):
-        candidate = _next_window_start(candidate)
+    candidate = _clip_to_window(baseline if _within_windows(baseline, windows) else _next_window_start(baseline, windows), windows)
+    if candidate == baseline and not _within_windows(candidate, windows):
+        candidate = _next_window_start(candidate, windows)
     if last:
         candidate = max(candidate, baseline + cooldown)
-    candidate = _clip_to_window(candidate)
+    candidate = _clip_to_window(candidate, windows)
     if candidate < now:
-        candidate = _clip_to_window(now + timedelta(minutes=rng.randint(3, 12)))
+        candidate = _clip_to_window(now + timedelta(minutes=rng.randint(3, 12)), windows)
     return candidate
 
 
