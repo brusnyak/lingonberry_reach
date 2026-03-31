@@ -9,28 +9,20 @@ import json
 import os
 import re
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from openai import OpenAI
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-_client = None
+from agent.remote_models import complete_text
+
 _DB_PATH = Path(__file__).parent / "storage" / "db.py"
 _DB_SPEC = importlib.util.spec_from_file_location("outreach_storage_db_classifier", _DB_PATH)
 if _DB_SPEC is None or _DB_SPEC.loader is None:
     raise ImportError(f"Unable to load outreach storage module from {_DB_PATH}")
 _DB_MODULE = importlib.util.module_from_spec(_DB_SPEC)
 _DB_SPEC.loader.exec_module(_DB_MODULE)
-
-def _llm() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.environ["OPENROUTER_API_KEY"],
-            timeout=20.0,
-        )
-    return _client
 
 
 PROMPT = """Classify this reply to a cold outreach email from a freelance web/digital agency.
@@ -76,15 +68,16 @@ def _heuristic_classify(reply_text: str) -> dict:
 
 def classify_reply(reply_text: str) -> dict:
     try:
-        if not os.environ.get("OPENROUTER_API_KEY"):
+        if not any(
+            os.environ.get(name)
+            for name in ("OPENROUTER_API_KEY", "GROQ_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GOOGLE_AI_VICTOR_API_KEY")
+        ):
             return _heuristic_classify(reply_text)
-        resp = _llm().chat.completions.create(
-            model="mistralai/mistral-small-3.1-24b-instruct:free",
-            messages=[{"role": "user", "content": PROMPT.format(reply=reply_text[:2000])}],
+        raw = complete_text(
+            user_prompt=PROMPT.format(reply=reply_text[:2000]),
             temperature=0.2,
             max_tokens=200,
-        )
-        raw = resp.choices[0].message.content.strip()
+        ).strip()
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
         result = json.loads(raw)
         return {
