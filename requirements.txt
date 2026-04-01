@@ -1,3 +1,6 @@
 streamlit>=1.32.0
 openai>=1.0.0
 python-dotenv>=1.0.0
+geopy>=2.4.1
+timezonefinder>=6.5.7
+pytz>=2024.1

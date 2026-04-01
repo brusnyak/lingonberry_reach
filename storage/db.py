@@ -125,6 +125,18 @@ def init_outreach_tables(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE outreach_log ADD COLUMN jitter_seed INTEGER")
     if "message_variant_fingerprint" not in ocols:
         conn.execute("ALTER TABLE outreach_log ADD COLUMN message_variant_fingerprint TEXT")
+    if "touch_number" not in ocols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN touch_number INTEGER DEFAULT 1")
+    if "last_subject" not in ocols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN last_subject TEXT")
+    if "tracking_pixel_id" not in ocols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN tracking_pixel_id TEXT")
+    if "opened_at" not in ocols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN opened_at TEXT")
+    if "tracking_ua" not in ocols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN tracking_ua TEXT")
+    if "tracking_ip" not in ocols:
+        conn.execute("ALTER TABLE outreach_log ADD COLUMN tracking_ip TEXT")
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(replies)").fetchall()}
     if "message_id" not in cols:
         conn.execute("ALTER TABLE replies ADD COLUMN message_id TEXT")
@@ -798,7 +810,7 @@ def get_reply_queue_needing_action(conn: sqlite3.Connection, limit: int = 20) ->
         LEFT JOIN outreach_log o ON o.id = r.outreach_id
         LEFT JOIN reply_classification rc ON rc.reply_id = r.id
         LEFT JOIN reply_drafts rd ON rd.reply_id = r.id
-        WHERE COALESCE(rd.status, 'draft') != 'sent'
+        WHERE COALESCE(rd.status, 'draft') NOT IN ('sent', 'skipped')
         ORDER BY
             CASE COALESCE(rc.label, 'unclassified')
                 WHEN 'interested' THEN 0

@@ -158,6 +158,14 @@ def poll_replies(since_days: int = 7) -> int:
 
                 from_raw = _decode_header_value(msg_headers.get("From", ""))
                 subject = _decode_header_value(msg_headers.get("Subject", ""))
+                in_reply_to = (msg_headers.get("In-Reply-To") or "").strip()
+                references = (msg_headers.get("References") or "").strip()
+
+                # Internal test inboxes receive the original outreach emails in INBOX.
+                # Only treat a message as a reply if there is a standard reply marker.
+                subject_lower = subject.lower()
+                if not (subject_lower.startswith("re:") or in_reply_to or references):
+                    continue
 
                 # extract email address from From header
                 import re

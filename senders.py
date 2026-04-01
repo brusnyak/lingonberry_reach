@@ -34,3 +34,25 @@ def env_sender_name(index: int, address: str) -> str:
     configured = os.environ.get(f"EMAIL_{index}_NAME", "").strip()
     canonical = canonical_sender(address, configured)
     return canonical["name"]
+
+
+def internal_sender_addresses() -> tuple[str, ...]:
+    """Return all known internal mailboxes, preferring configured env accounts."""
+    addresses: list[str] = []
+    i = 1
+    while True:
+        addr = os.environ.get(f"EMAIL_{i}_ADDRESS", "").strip().lower()
+        if not addr:
+            break
+        if addr not in addresses:
+            addresses.append(addr)
+        i += 1
+    for addr in SENDER_REGISTRY:
+        normalized = addr.strip().lower()
+        if normalized and normalized not in addresses:
+            addresses.append(normalized)
+    return tuple(addresses)
+
+
+def is_internal_address(address: str) -> bool:
+    return (address or "").strip().lower() in set(internal_sender_addresses())

@@ -17,7 +17,7 @@ from storage.db import (
     get_pending_drafts, log_outreach, mark_sent, mark_skipped, get_stats,
 )
 from generator import generate_email
-from email_sender import pick_account, send_email, _load_accounts
+from email_sender import _load_accounts, pick_account, render_outreach_body, send_email
 
 st.set_page_config(page_title="Outreach", page_icon="📨", layout="wide")
 
@@ -73,7 +73,8 @@ with tab_queue:
                         st.error("All accounts at daily limit.")
                     else:
                         try:
-                            send_email(d["address"], subject, body, acc)
+                            final_body = render_outreach_body(body, acc, "en")
+                            send_email(d["address"], subject, final_body, acc)
                             conn.execute(
                                 "UPDATE outreach_log SET message=?, subject=? WHERE id=?",
                                 (body, subject, d["id"]),

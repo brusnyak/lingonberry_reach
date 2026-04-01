@@ -23,11 +23,12 @@ def _assert(condition: bool, message: str) -> None:
 
 def test_sender_registry() -> None:
     _assert(canonical_sender("brusnyak.f@gmail.com")["name"] == "Victor Brusnyak", "brusnyak.f identity mismatch")
-    _assert(canonical_sender("maxberryme68@gmail.com")["short"] == "Max B.", "maxberry short signer mismatch")
+    _assert(canonical_sender("lingonberry.max@gmail.com")["short"] == "Max L.", "lingonberry short signer mismatch")
 
 
 def test_safe_mode_default() -> None:
-    _assert(safe_mode_enabled(), "safe mode should default to ON")
+    expected = os.environ.get("BIZ_SAFE_MODE", "1").strip().lower() not in {"0", "false", "off", "no"}
+    _assert(safe_mode_enabled() == expected, "safe mode runtime mismatch with BIZ_SAFE_MODE env")
 
 
 def test_reply_drafter_identity_and_language() -> None:

@@ -13,6 +13,7 @@ Philosophy (from material/):
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 
 
@@ -49,18 +50,24 @@ LANG_PACKS = {
     "en": {
         "greeting_named": "Hi {name},",
         "greeting_plain": "Hi,",
-        "greeting_options": ["Hi,", "Hello,", "Hey,", "Good morning,"],
+        "greeting_options": ["Hi,", "Hello,", "Hey there,", "Hi there,", "Hey,", "Greetings,"],
         "close": [
             "Happy to keep this brief.",
             "No need for a long reply.",
             "Happy to keep it short.",
             "A quick reply would be plenty.",
+            "Cheers,",
+            "Best,",
+            "Thanks,",
         ],
         "soft_close": [
             "Let me know.",
             "Curious either way.",
             "Would be good to know.",
             "Open to a quick reply.",
+        ],
+        "ps_options": [
+            "i use it myself, just curious if it could help you too",
         ],
         "fallback_subject": "Quick question",
         "fallback_body": [
@@ -502,7 +509,8 @@ def extract_name(about_text: str, email: str = "") -> str:
         "reception", "rezeption", "recepce", "recepcia", "klinika", "clinic", "dental",
         "praxis", "ordination", "booking", "bookings", "accounts", "jobs", "work",
         "service", "services", "help", "general", "workorders", "welcome",
-        "termine", "termin", "kosice", "bratislava", "vienna", "wien", "prague",
+        "termine", "termin", "kontakt", "kosice", "bratislava", "vienna", "wien", "prague",
+        "webmaster", "postmaster", "hostmaster", "root", "user", "marketing", "admin",
     }
     if prefix in generic:
         return ""
@@ -582,6 +590,9 @@ def _greeting(language: str, contact_name: str, seed: int) -> str:
 
 
 def _infer_language(lead: dict, normalized: str) -> str:
+    mode = os.environ.get("OUTREACH_LANGUAGE_MODE", "english_first").strip().lower()
+    if mode in {"english", "english_first", "en"}:
+        return "en"
     if normalized and normalized != "en":
         return normalized
     website = (lead.get("website") or lead.get("site_url") or "").lower()
@@ -710,10 +721,10 @@ def generate_email(lead: dict) -> dict:
 
 DIRECT_SUBJECTS = {
     "home_services": {
-        "en": ["quick question about enquiries", "missed calls question", "booking question", "quick one about your leads"],
+        "en": ["quick question", "quick question about enquiries", "missed calls question", "booking question", "quick one on admin"],
     },
     "real_estate": {
-        "en": ["quick question", "3-day reply time", "lead follow-up question", "property enquiry question"],
+        "en": ["quick question about enquiries", "buyer enquiry handling", "lead follow-up question", "property enquiry flow"],
         "sk": ["krátka otázka", "3-dňová odozva", "otázka k dopytom", "otázka k záujemcom"],
         "cs": ["krátký dotaz", "3denní odezva", "dotaz k poptávkám", "dotaz k zájemcům"],
         "de": ["kurze Frage", "3-Tage-Reaktionszeit", "Frage zu Anfragen", "Frage zu Interessenten"],
@@ -766,9 +777,9 @@ WHAT_I_DO = {
 NICHE_VALUE = {
     "home_services": {
         "en": [
-            "While you're on a job, I could handle the enquiry, qualify the lead, and book them straight into your calendar — so you come home to a full schedule.",
-            "For a trades business I could set up automatic replies to missed calls and texts so every enquiry gets a response within minutes, even when you're on site.",
-            "I could automate your enquiry intake so missed calls get a text back within 60 seconds and the job gets booked without you lifting a finger.",
+            "I build simple systems that handle initial enquiries and book qualified jobs straight into the calendar so nothing gets missed while you're on site.",
+            "I set up automatic text and email responses for missed calls so every enquiry gets an immediate answer and the best jobs don't go to someone faster.",
+            "I build simple follow-up flows that keep the conversation warm with new leads until they are ready to book, without you needing to manually chase.",
         ],
     },
     "real_estate": {
@@ -896,97 +907,191 @@ SIGN_OFF = {
 }
 
 # ── Touch 1 copy ──────────────────────────────────────────────────────────────
-# Hook-first. No "starting out" framing. Under 40 words.
-# Structure: greeting → specific thing → one question → (sign-off added at send time)
+# Plain, open first touch. Sender can say they're starting out. Sign-off added later.
+# Structure: greeting → plain intro → specific thing → one question → (sign-off added at send time)
+
+TOUCH1_INTRO = {
+    "en": [
+        "I build automated enquiry handling systems for trade businesses.",
+        "I build instant response systems that handle new customer enquiries while you're out on a job.",
+        "I build automated dispatch and qualification workflows that filter your incoming leads.",
+        "I build automated response systems that book qualified jobs directly into your calendar.",
+    ],
+    "sk": [
+        "Začínam pomáhať menším firmám šetriť čas pomocou jednoduchých automatizácií.",
+        "Začínam s jednoduchými automatizáciami pre menšie firmy.",
+    ],
+    "cs": [
+        "Začínám pomáhat menším firmám šetřit čas pomocí jednoduchých automatizací.",
+        "Začínám s jednoduchými automatizacemi pro menší firmy.",
+    ],
+    "de": [
+        "Ich starte gerade damit, kleinen Unternehmen mit einfachen Automatisierungen Zeit zu sparen.",
+        "Ich fange gerade mit einfachen Automatisierungen für kleinere Unternehmen an.",
+    ],
+}
 
 TOUCH1_SPECIFIC = {
     "home_services": {
         "en": [
-            "While you're on a job, enquiries go cold. I set up a simple system that replies, qualifies, and books the next job automatically.",
-            "Most trades lose jobs to slow replies. I set up auto-responses that reply within 60 seconds and book the job while you're on site.",
-            "I noticed you don't have online booking. I can set that up so customers book directly without calling — takes about a day.",
+            "It gives you an instant response time on every new lead and qualifies them before you even touch your phone.",
+            "It lets you reply in minutes without lifting a finger, so you stop losing jobs to faster competitors.",
+            "The goal is to handle the initial back-and-forth and book qualified leads straight into your calendar.",
+            "It filters out the junk leads automatically so you only deal with the serious ones.",
         ],
     },
     "real_estate": {
         "en": [
-            "I noticed agents often lose leads to slow first replies. I set up automated follow-up so every new enquiry gets a response within minutes.",
-            "Most agents lose leads while they're on viewings. I set up a system that replies and qualifies new enquiries automatically.",
+            "I help real estate agencies respond to new buyer enquiries and follow up automatically so agents spend more time on viewings and closings.",
+            "I build enquiry and follow-up workflows for real estate agencies so serious buyers get handled faster without agents chasing every lead manually.",
+            "I help real estate agencies qualify and follow up inbound enquiries automatically so the team can focus on active buyers and live deals.",
+            "For real estate agencies, that usually means faster replies on new buyer enquiries, basic qualification, and less manual chasing across the team.",
         ],
         "sk": [
-            "Väčšina maklérov prichádza o záujemcov kvôli pomalej odozve. Nastavím automatický follow-up, aby každý nový dopyt dostal odpoveď do pár minút.",
-            "Záujemcovia nevychladnú, kým ste na obhliadke — nastavím systém, ktorý automaticky odpovedá a kvalifikuje nové dopyty.",
+            "Pomáham realitným kanceláriám riešiť nové dopyty rýchlejšou prvou odpoveďou a čistejším follow-upom.",
+            "Robím jednoduché enquiry a follow-up workflowy pre realitné kancelárie, aby dopyty nezostávali visieť.",
         ],
         "cs": [
-            "Většina makléřů přichází o zájemce kvůli pomalé odezvě. Nastavím automatický follow-up, aby každá nová poptávka dostala odpověď do pár minut.",
-            "Zájemci nevychladnou, zatímco jste na prohlídce — nastavím systém, který automaticky odpovídá a kvalifikuje nové poptávky.",
+            "Pomáhám realitním kancelářím řešit nové poptávky rychlejší první odpovědí a čistším follow-upem.",
+            "Dělám jednoduché enquiry a follow-up workflowy pro realitní kanceláře, aby poptávky nezůstávaly viset.",
         ],
         "de": [
-            "Die meisten Makler verlieren Leads durch langsame Reaktionszeiten. Ich richte automatisches Follow-up ein, damit jede neue Anfrage innerhalb von Minuten eine Antwort bekommt.",
-            "Interessenten werden nicht kalt, während Sie Besichtigungen machen — ich richte ein System ein, das neue Anfragen automatisch beantwortet und qualifiziert.",
+            "Ich helfe Immobilienbüros bei neuen Anfragen mit einer schnelleren ersten Antwort und saubererem Follow-up.",
+            "Ich baue einfache Anfrage- und Follow-up-Abläufe für Immobilienbüros, damit Leads nicht liegen bleiben.",
         ],
     },
     "accounting_tax": {
         "en": [
-            "Most accountants spend hours chasing clients for missing documents. I set up automated reminders that do that for you.",
-            "I can automate your document collection so clients get reminders automatically and you stop chasing.",
+            "I think I could help with document chasing so clients get reminders without you having to follow up manually.",
+            "I think I could help make client onboarding and document collection less manual.",
         ],
         "sk": [
-            "Väčšina účtovníkov trávi hodiny naháňaním klientov za podkladmi. Nastavím automatické pripomienky, ktoré to urobia za vás.",
-            "Viem automatizovať zbieranie dokumentov — klienti dostanú pripomienky sami a vy prestanete naháňať.",
+            "Myslím, že by som vedel pomôcť s naháňaním podkladov, aby klienti dostávali pripomienky bez ručného follow-upu.",
+            "Myslím, že by som vedel pomôcť spraviť onboarding a zber dokumentov menej manuálny.",
         ],
         "cs": [
-            "Většina účetních tráví hodiny honením klientů za podklady. Nastavím automatické připomínky, které to udělají za vás.",
-            "Dokážu automatizovat sběr dokumentů — klienti dostanou připomínky sami a vy přestanete honit.",
+            "Myslím, že bych uměl pomoct s naháněním podkladů, aby klienti dostávali připomínky bez ručního follow-upu.",
+            "Myslím, že bych uměl pomoct udělat onboarding a sběr dokumentů méně manuální.",
         ],
         "de": [
-            "Die meisten Steuerberater verbringen Stunden damit, Mandanten nach Unterlagen zu jagen. Ich richte automatische Erinnerungen ein, die das für Sie erledigen.",
-            "Ich kann Ihre Dokumentensammlung automatisieren — Mandanten bekommen Erinnerungen automatisch und Sie hören auf zu jagen.",
+            "Ich glaube, ich könnte beim Nachfassen fehlender Unterlagen helfen, damit Sie nicht alles manuell erinnern müssen.",
+            "Ich glaube, ich könnte Onboarding und Unterlagensammlung etwas weniger manuell machen.",
         ],
     },
     "dental_medical": {
         "en": [
-            "I noticed clinics often lose patients to slow follow-up on enquiries. I set up automated intake so every new enquiry gets a response within minutes.",
-            "Most clinics lose bookings to missed enquiries. I set up a system that replies and books automatically.",
+            "I think I could help with new patient enquiries so people get a quicker reply instead of waiting around.",
+            "I think I could help with intake follow-up so fewer enquiries go quiet.",
         ],
         "sk": [
-            "Väčšina kliník prichádza o pacientov kvôli pomalej odozve na dopyty. Nastavím automatický intake, aby každý nový dopyt dostal odpoveď do pár minút.",
-            "Kliniky strácajú rezervácie kvôli zmeškaným dopytom. Nastavím systém, ktorý automaticky odpovedá a rezervuje.",
+            "Myslím, že by som vedel pomôcť s novými dopytmi pacientov, aby ľudia dostali rýchlejšiu odpoveď.",
+            "Myslím, že by som vedel pomôcť s intake follow-upom, aby menej dopytov ostalo bez reakcie.",
         ],
         "cs": [
-            "Většina klinik přichází o pacienty kvůli pomalé odezvě na poptávky. Nastavím automatický intake, aby každá nová poptávka dostala odpověď do pár minut.",
-            "Kliniky ztrácejí rezervace kvůli zmeškaným poptávkám. Nastavím systém, který automaticky odpovídá a rezervuje.",
+            "Myslím, že bych uměl pomoct s novými poptávkami pacientů, aby lidé dostali rychlejší odpověď.",
+            "Myslím, že bych uměl pomoct s intake follow-upem, aby méně poptávek zůstalo bez reakce.",
         ],
         "de": [
-            "Die meisten Kliniken verlieren Patienten durch langsame Reaktion auf Anfragen. Ich richte automatisches Intake ein, damit jede neue Anfrage innerhalb von Minuten eine Antwort bekommt.",
-            "Praxen verlieren Buchungen durch verpasste Anfragen. Ich richte ein System ein, das automatisch antwortet und bucht.",
+            "Ich glaube, ich könnte bei neuen Patientenanfragen helfen, damit Menschen schneller eine Antwort bekommen.",
+            "Ich glaube, ich könnte beim Intake-Follow-up helfen, damit weniger Anfragen ohne Reaktion bleiben.",
         ],
     },
     "_default": {
         "en": [
-            "I set up simple automations that handle follow-up and intake so nothing falls through the cracks.",
-            "I can automate the manual back-and-forth in your process so your team spends less time on admin.",
+            "I think I could help reduce some of the manual back-and-forth around new enquiries and admin.",
+            "I think I could help save some time in the way new enquiries and follow-up are handled.",
         ],
         "sk": [
-            "Nastavím jednoduché automatizácie na follow-up a intake, aby nič nevypadlo.",
-            "Viem automatizovať manuálny back-and-forth vo vašom procese, aby váš tím trávil menej času administratívou.",
+            "Myslím, že by som vedel pomôcť ubrať z manuálneho back-and-forth okolo dopytov a administratívy.",
+            "Myslím, že by som vedel pomôcť ušetriť čas v tom, ako riešite nové dopyty a follow-up.",
         ],
         "cs": [
-            "Nastavím jednoduché automatizace pro follow-up a intake, aby nic nevypadlo.",
-            "Dokážu automatizovat manuální back-and-forth ve vašem procesu, aby váš tým trávil méně času administrativou.",
+            "Myslím, že bych uměl pomoct ubrat z manuálního back-and-forth kolem poptávek a administrativy.",
+            "Myslím, že bych uměl pomoct ušetřit čas v tom, jak řešíte nové poptávky a follow-up.",
         ],
         "de": [
-            "Ich richte einfache Automatisierungen für Follow-up und Intake ein, damit nichts durchs Raster fällt.",
-            "Ich kann das manuelle Hin und Her in Ihrem Prozess automatisieren, damit Ihr Team weniger Zeit mit Verwaltung verbringt.",
+            "Ich glaube, ich könnte etwas von dem manuellen Hin und Her bei Anfragen und Verwaltung abnehmen.",
+            "Ich glaube, ich könnte dabei helfen, bei neuen Anfragen und Follow-up etwas Zeit zu sparen.",
         ],
     },
 }
 
+# UK Trades A/B Test Variants — Version A (Pain + Quick Value) and Version B (Benefit + Question)
+# 50/50 split — track open rate + reply rate
+UK_TRADES_AB = {
+    "variant_a": {
+        "subject": "Stop missing job enquiries while on site?",
+        "body_template": """Hi {name},
+
+New enquiries from {platform} often go unanswered while you're working — and you lose good jobs.
+
+I build simple AI that filters junk, drafts replies in your style, and books qualified leads into your calendar.
+
+You only get pinged for the hot ones.
+
+Running 7-day free tests now at low rate for first setups.
+
+Want a quick Loom?""",
+        "word_count": 52,
+    },
+    "variant_b": {
+        "subject": "Save 2-3 hours a week on enquiries?",
+        "body_template": """Hi {name},
+
+I build AI systems that handle initial back-and-forth on new job enquiries and book qualified ones straight into your calendar.
+
+Everything stays in your email — you approve replies.
+
+Doing 7-day free tests for a few UK tradies at low rate.
+
+Open to seeing a quick Loom of how it works?""",
+        "word_count": 48,
+    },
+}
+
+# Platform detection for personalization
+UK_PLATFORMS = ["Checkatrade", "MyBuilder", "Bark", "TrustATrader", "Rated People", "Checkatrade or MyBuilder"]
+
+# UK Trades specific follow-up templates
+UK_TRADES_FOLLOWUP = {
+    "touch2": """Hi {name},
+
+Did you see my note about handling job enquiries?
+
+Still happy to run the free 7-day test — no commitment needed.
+
+Cheers,
+{sender_name}""",
+    "touch3": """Hi {name},
+
+Just one more nudge on this.
+
+The 7-day free test is still open if you want to see how it works.
+
+Cheers,
+{sender_name}""",
+    "touch4": """Hi {name},
+
+Last one from me.
+
+If handling enquiries better isn't a priority right now, no worries at all.
+
+Cheers,
+{sender_name}""",
+    "touch5": """Hi {name},
+
+I'll stop here — but if you ever want to revisit, just reply to this thread.
+
+Cheers,
+{sender_name}""",
+}
+
 TOUCH1_CTA = {
     "en": [
-        "Worth a quick look?",
-        "Does that sound useful?",
-        "Relevant for you?",
-        "Worth a quick chat?",
+        "Would you be interested?",
+        "Would that be worth a quick look?",
+        "If I could save you 2-3 hours every week, would you be open to a quick chat?",
+        "Curious if that's useful. Reply yes or no.",
     ],
     "sk": [
         "Zaujalo by vás to?",
@@ -1006,13 +1111,6 @@ TOUCH1_CTA = {
         "Ist das relevant für Sie?",
         "Wäre ein kurzes Gespräch sinnvoll?",
     ],
-}
-
-TOUCH1_OFFER = {
-    "en": "Happy to do it free or rev-share to start.",
-    "sk": "Rád to urobím zadarmo alebo na báze rev-share.",
-    "cs": "Rád to udělám zdarma nebo na bázi rev-share.",
-    "de": "Ich mache das gerne kostenlos oder auf Rev-Share-Basis.",
 }
 
 # ── Touch 2-5 copy ────────────────────────────────────────────────────────────
@@ -1132,9 +1230,8 @@ def _sender_first_name(account: dict | None) -> str:
 def _build_direct_email(language: str, greeting: str, niche: str, seed: int,
                         outreach_angle: str = "", account: dict | None = None) -> dict:
     """
-    Touch 1 email. Hook-first, no starting-out framing.
+    Touch 1 email. Plain, open, low-pressure.
     Body stored WITHOUT sign-off — appended at send time.
-    Under 40 words target.
     """
     lang = language if language in TOUCH1_CTA else "en"
     _NICHE_MAP = {"dental_medical": "dental_medical", "beauty_salon": "_default",
@@ -1146,19 +1243,35 @@ def _build_direct_email(language: str, greeting: str, niche: str, seed: int,
     subjects = DIRECT_SUBJECTS.get(niche_key, DIRECT_SUBJECTS["_default"]).get(lang, DIRECT_SUBJECTS["_default"]["en"])
     subject = _pick(subjects, seed, "subject")
 
-    # Specific line: use outreach_angle for EN if available, else niche pack
+    # Specific line: prioritize niche offer over scraped outreach_angle for the neighborly vibe
     niche_pack = TOUCH1_SPECIFIC[niche_key]
-    if outreach_angle and outreach_angle.strip() and lang == "en":
+    niche_offer = _pick(niche_pack.get(lang, niche_pack["en"]), seed, "niche_value")
+
+    # If outreach_angle exists, we can still use it, but ONLY if we aren't defaulting to the pure neighborly offer.
+    # For now, as per user request to "push our offer", we ignore outreach_angle if a niche offer is available.
+    if lang == "en" and niche_offer:
+        specific_line = niche_offer.strip().rstrip(".") + "."
+    elif outreach_angle and outreach_angle.strip() and lang == "en":
         specific_line = outreach_angle.strip().rstrip(".") + "."
     else:
-        specific_line = _pick(niche_pack.get(lang, niche_pack["en"]), seed, "niche_value")
+        specific_line = niche_offer
 
+    intro = _pick(TOUCH1_INTRO.get(lang, TOUCH1_INTRO["en"]), seed, "intro")
     cta = _pick(TOUCH1_CTA[lang], seed, "cta")
-    offer = TOUCH1_OFFER.get(lang, TOUCH1_OFFER["en"])
 
-    # greeting → specific → cta + offer
+    # greeting → intro → specific → cta
     # No sign-off — appended at send time
-    body = "\n\n".join([greeting, specific_line, cta + " " + offer])
+    body_parts = [greeting, intro, specific_line, cta]
+
+    # Occasional neighborly P.S. (10% chance)
+    if lang == "en" and "ps_options" in LANG_PACKS[lang]:
+        # Use seed to stay deterministic for this lead/touch
+        ps_roll = (seed * 7 + 13) % 100
+        if ps_roll < 10:  # 10% probability
+            ps_line = _pick(LANG_PACKS[lang]["ps_options"], seed, "ps")
+            body_parts.append(f"P.S. {ps_line}")
+
+    body = "\n\n".join(body_parts)
     return {
         "subject": subject[:80],
         "body": body,
@@ -1182,6 +1295,20 @@ def generate_followup(lead: dict, touch: int, account: dict | None = None) -> di
     name = contact_name or ""
 
     seed = _stable_index(lead.get("id"), lead.get("name"), touch, lang)
+    
+    # UK Trades follow-up path
+    if language == "en" and _is_uk_trade(lead) and touch <= 5:
+        touch_key = f"touch{touch}"
+        if touch_key in UK_TRADES_FOLLOWUP:
+            sender_name = (account or {}).get("name") or "Yegor"
+            body = UK_TRADES_FOLLOWUP[touch_key].format(name=name, sender_name=sender_name)
+            return {
+                "subject": "Re: " + (lead.get("last_subject") or "follow-up"),
+                "body": body,
+                "fingerprint": hashlib.sha1(body.encode("utf-8")).hexdigest()[:16],
+                "touch": touch,
+                "is_uk_trade": True,
+            }
 
     niche = (lead.get("target_niche") or "").strip()
     _NICHE_MAP = {"dental_medical": "dental_medical", "beauty_salon": "_default",
@@ -1224,6 +1351,73 @@ def generate_followup(lead: dict, touch: int, account: dict | None = None) -> di
     }
 
 
+def _is_uk_trade(lead: dict) -> bool:
+    """Detect if lead is a UK tradesperson (plumber, electrician, HVAC, etc.)"""
+    website = (lead.get("website") or lead.get("site_url") or "").lower()
+    address = (lead.get("address") or "").lower()
+    category = (lead.get("category") or "").lower()
+    niche = (lead.get("target_niche") or "").lower()
+    brand = (lead.get("brand_summary") or "").lower()
+    
+    # UK location markers
+    uk_markers = [".co.uk", ".uk", "london", "manchester", "birmingham", "leeds", 
+                  "glasgow", "liverpool", "bristol", "sheffield", "edinburgh",
+                  "uk", "united kingdom", "england", "scotland", "wales"]
+    is_uk = any(m in website or m in address for m in uk_markers)
+    
+    # Trade markers
+    trade_markers = ["plumb", "electri", "hvac", "heating", "boiler", "gas", "roofer",
+                     "builder", "carpenter", "joiner", "tiler", "plasterer", 
+                     "handyman", "kitchen", "bathroom", "renovation",
+                     "drain", "painter", "decorator", "bricklayer"]
+    is_trade = any(t in category or t in niche or t in brand for t in trade_markers)
+    
+    return is_uk and is_trade
+
+
+def _detect_platform(lead: dict) -> str:
+    """Detect lead platform from website or brand info for personalization."""
+    text = (lead.get("website") or "") + " " + (lead.get("brand_summary") or "")
+    text_lower = text.lower()
+    
+    platform_map = {
+        "checkatrade": "Checkatrade",
+        "mybuilder": "MyBuilder", 
+        "bark": "Bark",
+        "trustatrader": "TrustATrader",
+        "rated": "Rated People",
+    }
+    
+    for key, platform in platform_map.items():
+        if key in text_lower:
+            return platform
+    
+    # Default fallback
+    return "Checkatrade or MyBuilder"
+
+
+def _generate_uk_trades_email(lead: dict, seed: int, contact_name: str) -> dict:
+    """Generate UK trades A/B test email (50/50 split)."""
+    # A/B selector: use lead ID for deterministic but even split
+    variant = "variant_a" if (lead.get("id") or seed) % 2 == 0 else "variant_b"
+    config = UK_TRADES_AB[variant]
+    
+    # Personalization
+    name = contact_name or "there"
+    platform = _detect_platform(lead)
+    
+    # Build body
+    body = config["body_template"].format(name=name, platform=platform)
+    
+    return {
+        "subject": config["subject"],
+        "body": body,
+        "fingerprint": hashlib.sha1(body.encode("utf-8")).hexdigest()[:16],
+        "variant": variant,
+        "word_count": config["word_count"],
+    }
+
+
 def generate_email(lead: dict, account: dict | None = None) -> dict:
     """Return {'subject': str, 'body': str, 'fingerprint': str} for email outreach.
 
@@ -1232,8 +1426,10 @@ def generate_email(lead: dict, account: dict | None = None) -> dict:
         account: sender account dict with 'name' and 'address' keys.
                  If None, sign-off defaults to first sender name.
     """
-    # Name enrichment: prefer contact_name column, fall back to email-prefix extraction
+    # Name enrichment: prefer contact_name column (first word only), fall back to email-prefix extraction
     contact_name = (lead.get("contact_name") or "").strip()
+    if contact_name:
+        contact_name = contact_name.split()[0]  # first name only
     if not contact_name:
         email_addr = (lead.get("site_emails") or lead.get("email_maps") or "").split(",")[0].strip()
         contact_name = extract_name(lead.get("brand_summary", ""), email_addr)
@@ -1246,6 +1442,10 @@ def generate_email(lead: dict, account: dict | None = None) -> dict:
         lead.get("language", ""),
     )
     language = _infer_language(lead, _normalize_language(lead.get("language", "")))
+    
+    # UK Trades A/B Test path
+    if language == "en" and _is_uk_trade(lead):
+        return _generate_uk_trades_email(lead, seed, contact_name)
 
     # Use "Hey {name}," for EN if name known (friendlier), else standard greeting
     if contact_name and language == "en":
