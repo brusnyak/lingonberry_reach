@@ -3,10 +3,56 @@ outreach/storage/db.py
 Shared DB layer — reads from leadgen's businesses table,
 writes to outreach tables in the same DB.
 """
+import os
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 LEADS_DB = Path(__file__).parent.parent.parent / "leadgen" / "data" / "leads.db"
+
+def _get_encryption_key() -> Optional[str]:
+    """Get database encryption key from environment variable."""
+    key = os.environ.get("DB_ENCRYPTION_KEY", "").strip()
+    if not key:
+        return None
+    # If key is not hex, derive a 256-bit key using a simple hash
+    # In production, use proper KDF like PBKDF2
+    if len(key) == 64 and all(c in "0123456789abcdefABCDEF" for c in key):
+        return key
+    # Simple derivation: SHA256 of the key, then hex
+    import hashlib
+    return hashlib.sha256(key.encode()).hexdigest()[:64]
+
+def connect_encrypted(db_path: str | Path) -> sqlite3.Connection:
+    """Connect to SQLite database with optional SQLCipher encryption."""
+    # Try to import pysqlcipher3, fall back to standard sqlite3 if not available
+    try:
+        import sqlcipher3 as sqlite3_enc
+        connector = sqlite3_enc
+    except ImportError:
+        # pysqlcipher3 not available, use standard sqlite3 (no encryption)
+        connector = sqlite3
+    
+    conn = connector.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    
+    # Apply encryption if key is available
+    key = _get_encryption_key()
+    if key and connector is sqlite3_enc:
+        try:
+            # Set cipher parameters for better security
+            conn.execute("PRAGMA cipher_page_size = 4096")
+            conn.execute("PRAGMA kdf_iter = 256000")
+            conn.execute(f"PRAGMA key = 'x'{key}")
+            # Verify the key worked by trying to read something
+            conn.execute("SELECT count(*) FROM sqlite_master")
+        except Exception as e:
+            raise RuntimeError(f"Failed to unlock database with encryption key: {e}")
+    else:
+        # No encryption or no pysqlcipher3
+        conn.execute("PRAGMA journal_mode=WAL")
+    
+    return conn
 
 OUTREACH_SCHEMA = """
 CREATE TABLE IF NOT EXISTS outreach_log (
@@ -92,14 +138,63 @@ CREATE TABLE IF NOT EXISTS review_batches (
     approved_at     TEXT,
     created_at      TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS workflow_jobs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_key    TEXT NOT NULL,
+    entity_type     TEXT DEFAULT '',
+    entity_id       TEXT DEFAULT '',
+    payload         TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending', -- pending | dispatched | completed | failed | manual
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    external_ref    TEXT,
+    result_payload  TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    executed_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS trades_demo_inquiries (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id          TEXT UNIQUE,
+    source              TEXT NOT NULL DEFAULT 'imap',
+    from_name           TEXT,
+    from_address        TEXT NOT NULL,
+    subject             TEXT,
+    body                TEXT NOT NULL,
+    received_at         TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'new', -- new | needs_info | qualified | responded | booked | duplicate | failed
+    job_type            TEXT,
+    urgency             TEXT,
+    location_hint       TEXT,
+    qualification_score REAL DEFAULT 0,
+    qualification_reason TEXT,
+    response_subject    TEXT,
+    response_body       TEXT,
+    response_sent_at    TEXT,
+    booking_status      TEXT DEFAULT '', -- pending | completed | failed | not_needed
+    booking_slot_start  TEXT,
+    booking_slot_end    TEXT,
+    calendar_timezone   TEXT,
+    calendar_event_id   TEXT,
+    approval_status     TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+    approved_at         TEXT,
+    approved_by         TEXT,
+    rejected_at         TEXT,
+    execution_mode      TEXT,
+    last_job_id         INTEGER,
+    error_note          TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (last_job_id) REFERENCES workflow_jobs(id)
+);
 """
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(LEADS_DB)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    """Connect to the leads database with encryption if available."""
+    return connect_encrypted(LEADS_DB)
 
 
 def init_outreach_tables(conn: sqlite3.Connection) -> None:
@@ -137,6 +232,60 @@ def init_outreach_tables(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE outreach_log ADD COLUMN tracking_ua TEXT")
     if "tracking_ip" not in ocols:
         conn.execute("ALTER TABLE outreach_log ADD COLUMN tracking_ip TEXT")
+    job_cols = {row["name"] for row in conn.execute("PRAGMA table_info(workflow_jobs)").fetchall()}
+    for col, typedef in [
+        ("entity_type", "TEXT DEFAULT ''"),
+        ("entity_id", "TEXT DEFAULT ''"),
+        ("payload", "TEXT NOT NULL DEFAULT '{}'"),
+        ("status", "TEXT NOT NULL DEFAULT 'pending'"),
+        ("attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_error", "TEXT"),
+        ("external_ref", "TEXT"),
+        ("result_payload", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("executed_at", "TEXT"),
+    ]:
+        if col not in job_cols:
+            conn.execute(f"ALTER TABLE workflow_jobs ADD COLUMN {col} {typedef}")
+    demo_cols = {row["name"] for row in conn.execute("PRAGMA table_info(trades_demo_inquiries)").fetchall()}
+    for col, typedef in [
+        ("message_id", "TEXT UNIQUE"),
+        ("source", "TEXT NOT NULL DEFAULT 'imap'"),
+        ("from_name", "TEXT"),
+        ("from_address", "TEXT NOT NULL DEFAULT ''"),
+        ("subject", "TEXT"),
+        ("body", "TEXT NOT NULL DEFAULT ''"),
+        ("received_at", "TEXT"),
+        ("status", "TEXT NOT NULL DEFAULT 'new'"),
+        ("job_type", "TEXT"),
+        ("urgency", "TEXT"),
+        ("location_hint", "TEXT"),
+        ("qualification_score", "REAL DEFAULT 0"),
+        ("qualification_reason", "TEXT"),
+        ("response_subject", "TEXT"),
+        ("response_body", "TEXT"),
+        ("response_sent_at", "TEXT"),
+        ("booking_status", "TEXT DEFAULT ''"),
+        ("booking_slot_start", "TEXT"),
+        ("booking_slot_end", "TEXT"),
+        ("calendar_timezone", "TEXT"),
+        ("calendar_event_id", "TEXT"),
+        ("approval_status", "TEXT NOT NULL DEFAULT 'pending'"),
+        ("approved_at", "TEXT"),
+        ("approved_by", "TEXT"),
+        ("rejected_at", "TEXT"),
+        ("execution_mode", "TEXT"),
+        ("last_job_id", "INTEGER"),
+        ("error_note", "TEXT"),
+        ("created_at", "TEXT"),
+        ("updated_at", "TEXT"),
+    ]:
+        if col not in demo_cols:
+            conn.execute(f"ALTER TABLE trades_demo_inquiries ADD COLUMN {col} {typedef}")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_demo_message_id ON trades_demo_inquiries(message_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_demo_status_received ON trades_demo_inquiries(status, received_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_workflow_jobs_key_status ON workflow_jobs(workflow_key, status)")
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(replies)").fetchall()}
     if "message_id" not in cols:
         conn.execute("ALTER TABLE replies ADD COLUMN message_id TEXT")
@@ -369,7 +518,7 @@ def get_approved_drafts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
             SELECT MAX(w2.id) FROM website_data w2 WHERE w2.business_id = b.id
         )
         WHERE o.status = 'approved'
-        ORDER BY o.created_at ASC
+        ORDER BY COALESCE(o.touch_number, 1) DESC, o.created_at ASC
         """
     ).fetchall()
 
@@ -823,3 +972,197 @@ def get_reply_queue_needing_action(conn: sqlite3.Connection, limit: int = 20) ->
         """,
         (limit,),
     ).fetchall()
+
+
+def create_workflow_job(
+    conn: sqlite3.Connection,
+    workflow_key: str,
+    payload: str,
+    *,
+    entity_type: str = "",
+    entity_id: str = "",
+    status: str = "pending",
+) -> int:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        """
+        INSERT INTO workflow_jobs (
+            workflow_key, entity_type, entity_id, payload, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (workflow_key, entity_type, entity_id, payload, status, now, now),
+    )
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def update_workflow_job(
+    conn: sqlite3.Connection,
+    job_id: int,
+    *,
+    status: str,
+    attempts: int | None = None,
+    last_error: str = "",
+    external_ref: str = "",
+    result_payload: str = "",
+) -> None:
+    from datetime import datetime, timezone
+
+    current = conn.execute("SELECT attempts FROM workflow_jobs WHERE id=?", (job_id,)).fetchone()
+    next_attempts = attempts if attempts is not None else ((current["attempts"] if current else 0) + 1)
+    executed_at = datetime.now(timezone.utc).isoformat() if status in {"completed", "failed", "manual"} else None
+    conn.execute(
+        """
+        UPDATE workflow_jobs
+        SET status=?,
+            attempts=?,
+            last_error=CASE WHEN ?='' THEN last_error ELSE ? END,
+            external_ref=CASE WHEN ?='' THEN external_ref ELSE ? END,
+            result_payload=CASE WHEN ?='' THEN result_payload ELSE ? END,
+            updated_at=?,
+            executed_at=COALESCE(?, executed_at)
+        WHERE id=?
+        """,
+        (
+            status,
+            next_attempts,
+            last_error,
+            last_error,
+            external_ref,
+            external_ref,
+            result_payload,
+            result_payload,
+            datetime.now(timezone.utc).isoformat(),
+            executed_at,
+            job_id,
+        ),
+    )
+    conn.commit()
+
+
+def recent_workflow_jobs(conn: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT *
+        FROM workflow_jobs
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def log_trades_demo_inquiry(
+    conn: sqlite3.Connection,
+    *,
+    message_id: str = "",
+    source: str,
+    from_name: str,
+    from_address: str,
+    subject: str,
+    body: str,
+    received_at: str,
+) -> int | None:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        """
+        INSERT OR IGNORE INTO trades_demo_inquiries (
+            message_id, source, from_name, from_address, subject, body, received_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            message_id or None,
+            source,
+            from_name or None,
+            from_address,
+            subject or None,
+            body,
+            received_at,
+            now,
+            now,
+        ),
+    )
+    conn.commit()
+    return int(cur.lastrowid) if cur.rowcount else None
+
+
+def update_trades_demo_inquiry(conn: sqlite3.Connection, inquiry_id: int, **fields: object) -> None:
+    from datetime import datetime, timezone
+
+    if not fields:
+        return
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    keys = ", ".join(f"{key}=?" for key in fields.keys())
+    values = list(fields.values()) + [inquiry_id]
+    conn.execute(f"UPDATE trades_demo_inquiries SET {keys} WHERE id=?", values)
+    conn.commit()
+
+
+def get_trades_demo_inquiry(conn: sqlite3.Connection, inquiry_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM trades_demo_inquiries WHERE id=?",
+        (inquiry_id,),
+    ).fetchone()
+
+
+def list_trades_demo_inquiries(
+    conn: sqlite3.Connection,
+    *,
+    status: str = "",
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    if status:
+        return conn.execute(
+            """
+            SELECT *
+            FROM trades_demo_inquiries
+            WHERE status=?
+            ORDER BY received_at DESC, id DESC
+            LIMIT ?
+            """,
+            (status, limit),
+        ).fetchall()
+    return conn.execute(
+        """
+        SELECT *
+        FROM trades_demo_inquiries
+        ORDER BY received_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def get_trades_demo_stats(conn: sqlite3.Connection) -> dict:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE status='new') AS new_count,
+            COUNT(*) FILTER (WHERE approval_status='pending') AS pending_approval_count,
+            COUNT(*) FILTER (WHERE status='needs_info') AS needs_info_count,
+            COUNT(*) FILTER (WHERE status='qualified') AS qualified_count,
+            COUNT(*) FILTER (WHERE status='booked') AS booked_count,
+            COUNT(*) FILTER (WHERE status='failed') AS failed_count,
+            COUNT(*) FILTER (WHERE response_sent_at IS NOT NULL) AS responded_count,
+            MAX(received_at) AS last_received_at,
+            MAX(response_sent_at) AS last_response_sent_at
+        FROM trades_demo_inquiries
+        """
+    ).fetchone()
+    jobs = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total_jobs,
+            COUNT(*) FILTER (WHERE status='completed') AS completed_jobs,
+            COUNT(*) FILTER (WHERE status='failed') AS failed_jobs,
+            COUNT(*) FILTER (WHERE status='manual') AS manual_jobs,
+            MAX(updated_at) AS last_job_update
+        FROM workflow_jobs
+        """
+    ).fetchone()
+    return {**dict(row), **dict(jobs)}

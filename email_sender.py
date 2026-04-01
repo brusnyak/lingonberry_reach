@@ -39,6 +39,23 @@ LOCAL_WINDOWS = [
     (time(15, 30), time(18, 15))  # Local afternoon (wrapping up)
 ]
 
+_TZ_HINTS: list[tuple[tuple[str, ...], str]] = [
+    (("perth", "western australia", " wa ", " wa,", " wa-"), "Australia/Perth"),
+    (("adelaide", "south australia", " sa ", " sa,", " sa-"), "Australia/Adelaide"),
+    (("brisbane", "queensland", " qld", " qld,", " qld "), "Australia/Brisbane"),
+    (("sydney", "melbourne", "canberra", "hobart", "tasmania", "victoria", "new south wales", " nsw", " vic"), "Australia/Sydney"),
+    (("auckland", "wellington", "christchurch", "hamilton", "new zealand", " nz ", ".co.nz", ".nz"), "Pacific/Auckland"),
+    (("dublin", "cork", "galway", "limerick", "ireland", " ie ", ".ie"), "Europe/Dublin"),
+    (("london", "manchester", "birmingham", "leeds", "liverpool", "glasgow", "edinburgh", "bristol", "united kingdom", "great britain", ".co.uk", ".uk"), "Europe/London"),
+    (("bratislava", "košice", "slovakia", "slovensko", ".sk"), "Europe/Bratislava"),
+    (("prague", "praha", "brno", "ostrava", "czech", "česko", ".cz"), "Europe/Prague"),
+    (("vienna", "wien", "austria", ".at"), "Europe/Vienna"),
+    (("new york", "boston", "miami", "atlanta", "washington dc", "usa east"), "America/New_York"),
+    (("chicago", "houston", "dallas"), "America/Chicago"),
+    (("denver", "phoenix"), "America/Denver"),
+    (("los angeles", "san francisco", "seattle", "portland", "san diego"), "America/Los_Angeles"),
+]
+
 def infer_timezone(address: str) -> str:
     addr = (address or "").strip()
     if not addr:
@@ -48,12 +65,10 @@ def infer_timezone(address: str) -> str:
     
     try:
         addr_lower = addr.lower()
-        if any(token in addr_lower for token in ["sydney", "melbourne", "brisbane", "nsw", "vic", "qld", "australia", "perth", "adelaide"]):
-            _TZ_CACHE[addr] = "Australia/Sydney"
-            return "Australia/Sydney"
-        if any(token in addr_lower for token in ["bratislava", "praha", "brno", "wien", "vienna", ".sk", ".cz", ".at", "munich", "berlin"]):
-            _TZ_CACHE[addr] = "Europe/Bratislava"
-            return "Europe/Bratislava"
+        for tokens, tz_name in _TZ_HINTS:
+            if any(token in addr_lower for token in tokens):
+                _TZ_CACHE[addr] = tz_name
+                return tz_name
 
         location = _geolocator.geocode(addr)
         if location:
@@ -193,6 +208,29 @@ def _sent_today(conn: sqlite3.Connection, address: str) -> int:
     return row["cnt"] if row else 0
 
 
+def _account_daily_limit(address: str) -> int:
+    normalized = (address or "").strip().lower()
+    for account in _load_accounts():
+        if account["address"].strip().lower() == normalized:
+            return int(account.get("daily_limit", 30))
+    return 30
+
+
+def _scheduled_or_sent_on_date(conn: sqlite3.Connection, address: str, day_iso: str) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM outreach_log
+        WHERE channel='email'
+          AND sender_address=?
+          AND status IN ('sent', 'scheduled')
+          AND DATE(COALESCE(sent_at, send_after)) = ?
+        """,
+        (address, day_iso),
+    ).fetchone()
+    return int(row["cnt"] or 0) if row else 0
+
+
 def _last_sent_at(conn: sqlite3.Connection, address: str) -> str:
     row = conn.execute(
         """
@@ -292,6 +330,12 @@ def next_send_after(conn: sqlite3.Connection, address: str, jitter_seed: int | N
     
     if candidate < now:
         candidate = _clip_to_local_window(now + timedelta(minutes=rng.randint(3, 12)), tz_str)
+
+    daily_limit = _account_daily_limit(address)
+    guard = 0
+    while _scheduled_or_sent_on_date(conn, address, candidate.date().isoformat()) >= daily_limit and guard < 14:
+        candidate = _next_local_window_start(candidate + timedelta(days=1), tz_str)
+        guard += 1
         
     return candidate
 

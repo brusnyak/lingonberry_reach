@@ -27,38 +27,16 @@ from zoneinfo import ZoneInfo
 
 from .generator import generate_followup
 from .storage.db import connect, init_outreach_tables, get_qualified_leads, get_due_scheduled_drafts
-from .email_sender import _load_accounts
+from .email_sender import _load_accounts, infer_timezone
 
 LEADS_DB = Path(__file__).parent.parent / "leadgen" / "data" / "leads.db"
 
 
 def _infer_timezone(lead: dict) -> str:
-    """
-    Infer timezone from lead address or website.
-    Returns IANA timezone name (e.g., 'Europe/Bratislava').
-    Default: 'UTC' if cannot determine.
-    """
-    address = (lead.get("address") or "").lower()
-    website = (lead.get("website") or "").lower()
-
-    # Simple country-based mapping (expand as needed)
-    if any(city in address for city in ["bratislava", "košice", "žilina", "prešov", "slovakia"]):
-        return "Europe/Bratislava"
-    if any(city in address for city in ["prague", "praha", "české budějovice", "czech", "česko"]):
-        return "Europe/Prague"
-    if any(city in address for city in ["vienna", "wien", "austria"]):
-        return "Europe/Vienna"
-    if any(city in address for city in ["berlin", "hamburg", "munich", "germany", "deutschland"]):
-        return "Europe/Berlin"
-    if ".au" in website or "australia" in address:
-        return "Australia/Sydney"
-    if ".uk" in website or "uk" in address or "united kingdom" in address:
-        return "Europe/London"
-    if ".us" in website or "usa" in address or "united states" in address:
-        return "America/New_York"
-
-    # Default fallback
-    return "UTC"
+    address = (lead.get("address") or "").strip()
+    website = (lead.get("website") or "").strip()
+    composite = ", ".join(part for part in [address, website] if part)
+    return infer_timezone(composite)
 
 
 def _next_business_hour(dt: datetime, timezone_str: str) -> datetime:

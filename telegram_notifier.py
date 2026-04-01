@@ -14,14 +14,14 @@ import json
 LEADS_DB = Path(__file__).parent.parent / "leadgen" / "data" / "leads.db"
 
 # Telegram bot configuration
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BRIDGE_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_BRIDGE_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")  # Your personal chat ID
 
 
 def send_telegram_message(message: str, reply_markup: Optional[Dict] = None) -> bool:
     """Send message via Telegram bot with optional inline keyboard."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠ Telegram not configured (missing TELEGRAM_BRIDGE_TOKEN or TELEGRAM_CHAT_ID)")
+        print("⚠ Telegram not configured (missing TELEGRAM_BOT_TOKEN/TELEGRAM_BRIDGE_TOKEN or TELEGRAM_CHAT_ID)")
         return False
     
     try:
@@ -167,6 +167,50 @@ Subject: {draft_subject}
     }
     
     return send_telegram_message(message, reply_markup)
+
+
+def notify_trades_demo_approval(inquiry_id: int, payload: Dict[str, Any]) -> bool:
+    """Send a trades demo approval request with explicit command-based actions."""
+    slot = payload.get("slot") or {}
+    lines = [
+        "🔧 *Trades Demo Approval Needed*",
+        "",
+        f"Inquiry ID: `{inquiry_id}`",
+        f"From: {payload.get('from_name') or payload.get('from_address')}",
+        f"Email: {payload.get('from_address')}",
+        f"Subject: {payload.get('subject') or '(no subject)'}",
+        f"Qualification: {payload.get('qualification_status')} ({payload.get('qualification_score', 0):.0%})",
+        f"Reason: {payload.get('qualification_reason') or 'n/a'}",
+    ]
+    if slot:
+        lines.append(f"Proposed slot: {slot.get('local_label')}")
+    lines.extend(
+        [
+            "",
+            "Actions:",
+            f"`/approve_demo {inquiry_id}`",
+            f"`/reject_demo {inquiry_id}`",
+            "`/approve_demo_all`",
+        ]
+    )
+    return send_telegram_message("\n".join(lines))
+
+
+def notify_trades_demo_result(inquiry_id: int, payload: Dict[str, Any]) -> bool:
+    """Send final outcome for a processed trades demo inquiry."""
+    lines = [
+        "✅ *Trades Demo Result*" if payload.get("status") == "booked" else "📬 *Trades Demo Update*",
+        "",
+        f"Inquiry ID: `{inquiry_id}`",
+        f"Status: {payload.get('status')}",
+        f"Booking: {payload.get('booking_status') or 'n/a'}",
+        f"Mode: {payload.get('execution_mode') or 'n/a'}",
+    ]
+    if payload.get("calendar_event_id"):
+        lines.append(f"Calendar event: `{payload['calendar_event_id']}`")
+    if payload.get("error_note"):
+        lines.append(f"Error: {payload['error_note']}")
+    return send_telegram_message("\n".join(lines))
 
 
 if __name__ == "__main__":
