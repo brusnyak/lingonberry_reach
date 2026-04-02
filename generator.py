@@ -912,10 +912,10 @@ SIGN_OFF = {
 
 TOUCH1_INTRO = {
     "en": [
-        "I build automated enquiry handling systems for trade businesses.",
-        "I build instant response systems that handle new customer enquiries while you're out on a job.",
-        "I build automated dispatch and qualification workflows that filter your incoming leads.",
-        "I build automated response systems that book qualified jobs directly into your calendar.",
+        "New enquiries get handled in minutes instead of sitting unanswered.",
+        "Missed calls and late replies stop leaking booked jobs.",
+        "Lead qualification and first responses run automatically while you're on site.",
+        "Qualified jobs can be routed straight to your calendar without manual back-and-forth.",
     ],
     "sk": [
         "Začínam pomáhať menším firmám šetriť čas pomocou jednoduchých automatizácií.",
@@ -934,17 +934,17 @@ TOUCH1_INTRO = {
 TOUCH1_SPECIFIC = {
     "home_services": {
         "en": [
-            "It gives you an instant response time on every new lead and qualifies them before you even touch your phone.",
-            "It lets you reply in minutes without lifting a finger, so you stop losing jobs to faster competitors.",
-            "The goal is to handle the initial back-and-forth and book qualified leads straight into your calendar.",
-            "It filters out the junk leads automatically so you only deal with the serious ones.",
+            "Every new lead gets a fast first response and basic qualification before your phone even comes out.",
+            "Reply time drops to minutes, so good jobs stop going to whoever answered first.",
+            "Initial back-and-forth is handled automatically and booking-ready leads are surfaced immediately.",
+            "Low-intent enquiries are filtered out so your time goes to serious jobs only.",
         ],
     },
     "real_estate": {
         "en": [
-            "I help real estate agencies respond to new buyer enquiries and follow up automatically so agents spend more time on viewings and closings.",
-            "I build enquiry and follow-up workflows for real estate agencies so serious buyers get handled faster without agents chasing every lead manually.",
-            "I help real estate agencies qualify and follow up inbound enquiries automatically so the team can focus on active buyers and live deals.",
+            "New buyer enquiries can get immediate replies and follow-up without agents manually chasing every lead.",
+            "Serious buyers get handled faster with enquiry and follow-up workflows built for agency speed.",
+            "Inbound leads can be qualified and followed up automatically so the team stays focused on live deals.",
             "For real estate agencies, that usually means faster replies on new buyer enquiries, basic qualification, and less manual chasing across the team.",
         ],
         "sk": [
@@ -962,8 +962,8 @@ TOUCH1_SPECIFIC = {
     },
     "accounting_tax": {
         "en": [
-            "I think I could help with document chasing so clients get reminders without you having to follow up manually.",
-            "I think I could help make client onboarding and document collection less manual.",
+            "Document chasing can run on autopilot so clients get reminders without manual follow-up.",
+            "Client onboarding and document collection can be made much less manual.",
         ],
         "sk": [
             "Myslím, že by som vedel pomôcť s naháňaním podkladov, aby klienti dostávali pripomienky bez ručného follow-upu.",
@@ -980,8 +980,8 @@ TOUCH1_SPECIFIC = {
     },
     "dental_medical": {
         "en": [
-            "I think I could help with new patient enquiries so people get a quicker reply instead of waiting around.",
-            "I think I could help with intake follow-up so fewer enquiries go quiet.",
+            "New patient enquiries can get a quick first response instead of waiting in queue.",
+            "Intake follow-up can run automatically so fewer enquiries go quiet.",
         ],
         "sk": [
             "Myslím, že by som vedel pomôcť s novými dopytmi pacientov, aby ľudia dostali rýchlejšiu odpoveď.",
@@ -998,8 +998,8 @@ TOUCH1_SPECIFIC = {
     },
     "_default": {
         "en": [
-            "I think I could help reduce some of the manual back-and-forth around new enquiries and admin.",
-            "I think I could help save some time in the way new enquiries and follow-up are handled.",
+            "Manual back-and-forth around enquiries and admin can be reduced fast.",
+            "New enquiries and follow-up can be handled with far less manual effort.",
         ],
         "sk": [
             "Myslím, že by som vedel pomôcť ubrať z manuálneho back-and-forth okolo dopytov a administratívy.",
@@ -1025,7 +1025,7 @@ UK_TRADES_AB = {
 
 New enquiries from {platform} often go unanswered while you're working — and you lose good jobs.
 
-I build simple AI that filters junk, drafts replies in your style, and books qualified leads into your calendar.
+A simple workflow filters junk, drafts replies in your style, and books qualified leads into your calendar.
 
 You only get pinged for the hot ones.
 
@@ -1038,7 +1038,7 @@ Want a quick Loom?""",
         "subject": "Save 2-3 hours a week on enquiries?",
         "body_template": """Hi {name},
 
-I build AI systems that handle initial back-and-forth on new job enquiries and book qualified ones straight into your calendar.
+Initial back-and-forth on new job enquiries can be handled automatically, with qualified jobs routed into your calendar.
 
 Everything stays in your email — you approve replies.
 
@@ -1088,10 +1088,10 @@ Cheers,
 
 TOUCH1_CTA = {
     "en": [
-        "Would you be interested?",
-        "Would that be worth a quick look?",
-        "If I could save you 2-3 hours every week, would you be open to a quick chat?",
-        "Curious if that's useful. Reply yes or no.",
+        "Worth a quick look this week?",
+        "Open to a 10-minute walkthrough?",
+        "If this gave you 2-3 hours back weekly, would that be useful?",
+        "Useful for your setup? Reply yes or no.",
     ],
     "sk": [
         "Zaujalo by vás to?",

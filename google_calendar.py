@@ -9,6 +9,7 @@ This module stays deliberately narrow:
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
 from datetime import datetime, time, timedelta, timezone
@@ -25,13 +26,51 @@ def calendar_configured() -> bool:
     refresh_token = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "").strip()
     client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
     client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
-    return bool(calendar_id) and (bool(direct_token) or bool(refresh_token and client_id and client_secret))
+    sa_file = _service_account_file()
+    return bool(calendar_id) and (
+        bool(direct_token)
+        or bool(refresh_token and client_id and client_secret)
+        or bool(sa_file)
+    )
+
+
+def _service_account_file() -> str:
+    """Locate a service account JSON file if provided."""
+    explicit = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+    if explicit:
+        return explicit
+    # default: first JSON in secrets/ if present
+    secrets_dir = os.path.join(os.getcwd(), "secrets")
+    if os.path.isdir(secrets_dir):
+        candidates = glob.glob(os.path.join(secrets_dir, "*.json"))
+        if candidates:
+            return candidates[0]
+    return ""
 
 
 def _resolve_access_token() -> str:
     direct_token = os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", "").strip()
     if direct_token:
         return direct_token
+
+    sa_file = _service_account_file()
+    if sa_file:
+        try:
+            from google.auth.transport.requests import Request
+            from google.oauth2 import service_account
+        except ImportError as exc:
+            raise RuntimeError(
+                "Google service-account auth requires `google-auth`. "
+                "Install it in outreach/.venv to enable Calendar writes via service account."
+            ) from exc
+        creds = service_account.Credentials.from_service_account_file(
+            sa_file,
+            scopes=["https://www.googleapis.com/auth/calendar"],
+        )
+        creds.refresh(Request())
+        if not creds.token:
+            raise RuntimeError("Failed to refresh service account access token.")
+        return creds.token
 
     refresh_token = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "").strip()
     client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()

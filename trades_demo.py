@@ -52,6 +52,19 @@ _URGENT_MARKERS = ("urgent", "asap", "today", "tonight", "immediately", "straigh
 _QUALIFYING_MARKERS = ("quote", "address", "available", "phone", "tomorrow", "this week", "inspection", "callback")
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name, "1" if default else "0").strip().lower()
+    return raw in {"1", "true", "on", "yes"}
+
+
+def _approve_all_enabled_by_operator() -> bool:
+    """
+    Explicit operator-controlled toggle.
+    Keep OFF by default and enable only when you're ready to expose bulk execution.
+    """
+    return _env_flag("TRADES_DEMO_APPROVE_ALL_ENABLED", False)
+
+
 def _log_activity(title: str, detail: str, *, status: str = "info", entity_id: str = "") -> None:
     try:
         from reporting.core import log_activity_event
@@ -112,6 +125,28 @@ def _extract_body(msg: Message) -> str:
 def _extract_email(from_raw: str) -> str:
     match = re.search(r"[\w.+-]+@[\w-]+\.[a-z.]+", from_raw or "", re.IGNORECASE)
     return match.group(0).lower() if match else (from_raw or "").strip().lower()
+
+
+def _looks_like_trades_inquiry(from_addr: str, subject: str, body: str) -> bool:
+    addr = (from_addr or "").strip().lower()
+    text = f"{subject}\n{body}".lower()
+
+    local_part = addr.split("@", 1)[0] if "@" in addr else addr
+    if local_part in {"noreply", "no-reply", "donotreply", "do-not-reply"}:
+        return False
+
+    # Ignore obvious HTML-heavy system notifications.
+    if "<html" in body.lower() and len(body) > 5000:
+        return False
+
+    service_markers = [m for markers in _SERVICE_KEYWORDS.values() for m in markers]
+    if any(marker in text for marker in service_markers):
+        return True
+    if any(marker in text for marker in _QUALIFYING_MARKERS):
+        return True
+    if re.search(r"\b\d{1,4}\s+\w+\s+(street|st|road|rd|avenue|ave|drive|dr|lane|ln|court|ct)\b", text):
+        return True
+    return False
 
 
 def _classify_inquiry(subject: str, body: str) -> dict[str, object]:
@@ -187,6 +222,59 @@ def _response_for_inquiry(
     return subject, body
 
 
+def approve_all_reliability_status(*, sample_size: int = 20) -> dict[str, object]:
+    """
+    Reliability guard for bulk approval.
+    Rule: last 20 approved inquiries must have zero send failures.
+    """
+    conn = connect()
+    init_outreach_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT id, status, response_sent_at, error_note
+        FROM trades_demo_inquiries
+        WHERE approval_status='approved'
+        ORDER BY COALESCE(approved_at, updated_at, created_at) DESC, id DESC
+        LIMIT ?
+        """,
+        (sample_size,),
+    ).fetchall()
+
+    total = len(rows)
+    failed_ids: list[int] = []
+    for row in rows:
+        send_failed = not bool(row["response_sent_at"])
+        explicit_error = bool((row["error_note"] or "").strip())
+        status_failed = (row["status"] or "").strip().lower() == "failed"
+        if send_failed or explicit_error or status_failed:
+            failed_ids.append(int(row["id"]))
+
+    if total < sample_size:
+        reason = (
+            f"approve-all blocked: reliability sample too small "
+            f"({total}/{sample_size} approved inquiries with sends)."
+        )
+        return {"ok": False, "sample_size": sample_size, "observed": total, "failed_count": len(failed_ids), "failed_ids": failed_ids, "reason": reason}
+
+    if failed_ids:
+        reason = (
+            f"approve-all blocked: {len(failed_ids)} send failure(s) in last {sample_size} approved inquiries "
+            f"(ids: {', '.join(str(x) for x in failed_ids[:8])}{'...' if len(failed_ids) > 8 else ''})."
+        )
+        return {"ok": False, "sample_size": sample_size, "observed": total, "failed_count": len(failed_ids), "failed_ids": failed_ids, "reason": reason}
+
+    return {"ok": True, "sample_size": sample_size, "observed": total, "failed_count": 0, "failed_ids": [], "reason": "Reliability gate passed for bulk approval."}
+
+
+def _approve_all_guard() -> tuple[bool, str]:
+    if not _approve_all_enabled_by_operator():
+        return False, "approve-all disabled: set TRADES_DEMO_APPROVE_ALL_ENABLED=1 to allow bulk approval."
+    reliability = approve_all_reliability_status(sample_size=20)
+    if not bool(reliability.get("ok")):
+        return False, str(reliability.get("reason") or "approve-all blocked by reliability gate.")
+    return True, "approve-all enabled"
+
+
 def simulate_demo_inquiry(
     *,
     from_email: str,
@@ -240,6 +328,8 @@ def poll_demo_inbox(*, since_days: int = 14, limit: int = 20) -> int:
             subject = _decode_header_value(msg.get("Subject", ""))
             body = _extract_body(msg).strip()
             if not body:
+                continue
+            if not _looks_like_trades_inquiry(from_addr, subject, body):
                 continue
             try:
                 received_at = parsedate_to_datetime(msg.get("Date", "")).astimezone(timezone.utc).isoformat()
@@ -304,6 +394,10 @@ def process_demo_inquiry(inquiry_id: int, *, send_response: bool = True, require
         error_note="",
     )
     if require_approval:
+        allow_approve_all, guard_reason = _approve_all_guard()
+        note = ""
+        if not allow_approve_all:
+            note = f"Bulk approval unavailable: {guard_reason}"
         notify_trades_demo_approval(
             inquiry_id,
             {
@@ -315,6 +409,8 @@ def process_demo_inquiry(inquiry_id: int, *, send_response: bool = True, require
                 "qualification_reason": classification["qualification_reason"],
                 "slot": slot or {},
             },
+            include_approve_all=allow_approve_all,
+            approve_all_note=note,
         )
         detail = (
             f"inquiry={inquiry_id} staged_for_approval qualification={classification['qualification_reason']} "
@@ -443,7 +539,47 @@ def reject_demo_inquiry(inquiry_id: int, *, rejected_by: str = "operator", reaso
     return {"inquiry_id": inquiry_id, "status": "rejected"}
 
 
+def edit_demo_inquiry_response(
+    inquiry_id: int,
+    *,
+    response_body: str,
+    response_subject: str = "",
+    edited_by: str = "operator",
+) -> dict[str, object]:
+    conn = connect()
+    init_outreach_tables(conn)
+    row = get_trades_demo_inquiry(conn, inquiry_id)
+    if row is None:
+        raise RuntimeError(f"Trades demo inquiry {inquiry_id} not found.")
+    if row["approval_status"] != "pending":
+        raise RuntimeError(
+            f"Inquiry {inquiry_id} is not editable in current state "
+            f"(approval_status={row['approval_status']})."
+        )
+    body = (response_body or "").strip()
+    if not body:
+        raise RuntimeError("Edited response body cannot be empty.")
+    subject = (response_subject or row["response_subject"] or f"Re: {row['subject'] or 'your enquiry'}").strip()
+    update_trades_demo_inquiry(
+        conn,
+        inquiry_id,
+        response_subject=subject,
+        response_body=body,
+        error_note=f"Edited by {edited_by}",
+    )
+    _log_activity(
+        "Trades demo inquiry edited",
+        f"inquiry={inquiry_id} by={edited_by}",
+        status="info",
+        entity_id=str(inquiry_id),
+    )
+    return {"inquiry_id": inquiry_id, "status": "edited", "response_subject": subject}
+
+
 def approve_all_demo_inquiries(*, limit: int = 20, send_response: bool = True, approved_by: str = "operator") -> dict[str, object]:
+    allowed, reason = _approve_all_guard()
+    if not allowed:
+        return {"approved": [], "failed": [], "blocked": reason}
     conn = connect()
     init_outreach_tables(conn)
     rows = conn.execute(

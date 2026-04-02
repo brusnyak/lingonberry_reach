@@ -169,8 +169,14 @@ Subject: {draft_subject}
     return send_telegram_message(message, reply_markup)
 
 
-def notify_trades_demo_approval(inquiry_id: int, payload: Dict[str, Any]) -> bool:
-    """Send a trades demo approval request with explicit command-based actions."""
+def notify_trades_demo_approval(
+    inquiry_id: int,
+    payload: Dict[str, Any],
+    *,
+    include_approve_all: bool = False,
+    approve_all_note: str = "",
+) -> bool:
+    """Send a trades demo approval request with inline buttons."""
     slot = payload.get("slot") or {}
     lines = [
         "🔧 *Trades Demo Approval Needed*",
@@ -184,16 +190,20 @@ def notify_trades_demo_approval(inquiry_id: int, payload: Dict[str, Any]) -> boo
     ]
     if slot:
         lines.append(f"Proposed slot: {slot.get('local_label')}")
-    lines.extend(
+    if approve_all_note:
+        lines.extend(["", approve_all_note])
+
+    keyboard = [
         [
-            "",
-            "Actions:",
-            f"`/approve_demo {inquiry_id}`",
-            f"`/reject_demo {inquiry_id}`",
-            "`/approve_demo_all`",
+            {"text": "✅ Approve", "callback_data": f"demo:approve:{inquiry_id}"},
+            {"text": "📝 Edit", "callback_data": f"demo:edit:{inquiry_id}"},
+            {"text": "🚫 Reject", "callback_data": f"demo:reject:{inquiry_id}"},
         ]
-    )
-    return send_telegram_message("\n".join(lines))
+    ]
+    if include_approve_all:
+        keyboard.append([{"text": "✅ Approve All", "callback_data": "demo:approve_all"}])
+    reply_markup = {"inline_keyboard": keyboard}
+    return send_telegram_message("\n".join(lines), reply_markup)
 
 
 def notify_trades_demo_result(inquiry_id: int, payload: Dict[str, Any]) -> bool:
